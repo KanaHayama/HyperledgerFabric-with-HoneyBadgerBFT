@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+option go_package = "github.com/hyperledger/fabric/protos/orderer";
+option java_package = "org.hyperledger.fabric.protos.orderer";
+
+package orderer;
+
+// HoneyBadgerBFTMessage is a wrapper type for the messages
+// that the Kafka-based orderer deals with.
+message HoneyBadgerBFTMessage {
+    uint64 sender = 1;
+    uint64 receiver = 2;
+    string chain_id = 3;
+    uint64 height = 4;
+    uint64 instance = 5;
+    oneof Type {
+        HoneyBadgerBFTMessageNewHeight new_Height = 6;
+        HoneyBadgerBFTMessageCommonCoin common_coin = 7;
+        HoneyBadgerBFTMessageBinaryAgreement binary_agreement = 8;
+        HoneyBadgerBFTMessageReliableBroadcast reliable_broadcast = 9;
+        HoneyBadgerBFTMessageThresholdEncryption threshold_encryption = 10;
+        HoneyBadgerBFTMessageRequireBlock require_block = 11;
+        HoneyBadgerBFTMessageResponseBlock response_block = 12;
+    }
+}
+
+message HoneyBadgerBFTMessageNewHeight {
+
+}
+
+message HoneyBadgerBFTMessageCommonCoin {
+    uint64 round = 1;
+    bytes payload = 2;
+}
+
+message HoneyBadgerBFTMessageBinaryAgreement {
+    oneof Type {
+        HoneyBadgerBFTMessageBinaryAgreementEST est = 1;
+        HoneyBadgerBFTMessageBinaryAgreementAUX aux = 2;
+    }
+    uint64 round = 3;
+    bool value = 4;
+}
+
+message HoneyBadgerBFTMessageBinaryAgreementEST {
+
+}
+
+message HoneyBadgerBFTMessageBinaryAgreementAUX {
+
+}
+
+message HoneyBadgerBFTMessageReliableBroadcast {
+    oneof Type {
+        HoneyBadgerBFTMessageReliableBroadcastVAL val = 1;
+        HoneyBadgerBFTMessageReliableBroadcastECHO echo = 2;
+        HoneyBadgerBFTMessageReliableBroadcastREADY ready = 3;
+    }
+    uint64 pad_length = 4;
+    bytes block = 5;
+    bytes root_hash = 6;
+    repeated bytes branch = 7;
+}
+
+message HoneyBadgerBFTMessageReliableBroadcastVAL {
+
+}
+
+message HoneyBadgerBFTMessageReliableBroadcastECHO {
+
+}
+
+message HoneyBadgerBFTMessageReliableBroadcastREADY {
+
+}
+
+message HoneyBadgerBFTMessageThresholdEncryption {
+    repeated HoneyBadgerBFTMessageThresholdEncryptionShare shares = 1;
+}
+
+message HoneyBadgerBFTMessageThresholdEncryptionShare {
+    bytes payload = 1;
+}
+
+message HoneyBadgerBFTMessageRequireBlock {
+
+}
+
+message HoneyBadgerBFTMessageResponseBlock {
+    bytes payload = 1;
+}

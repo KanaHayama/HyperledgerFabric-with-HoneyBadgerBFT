@@ -56,7 +56,7 @@ func (ch *chainImpl) main() {
 	///////////////////////////////
 	//filter out NEW_HEIGHT nessage
 	///////////////////////////////
-	var fallthoughChannel = make(chan *ab.HoneyBadgerBFTMessage)
+	var relayChannel = make(chan *ab.HoneyBadgerBFTMessage)
 	var newHeight = make(chan uint64, 666666)
 	filterNewHeightMessageService := func() {
 		for {
@@ -65,7 +65,7 @@ func (ch *chainImpl) main() {
 			case *ab.HoneyBadgerBFTMessage_New_Height:
 				newHeight <- msg.GetHeight()
 			default:
-				fallthoughChannel <- msg
+				relayChannel <- msg
 			}
 		}
 	}
@@ -88,7 +88,7 @@ func (ch *chainImpl) main() {
 	}
 	dispatchMessageByHeightService := func() {
 		for {
-			msg := <-fallthoughChannel
+			msg := <-relayChannel
 			getByHeight(msg.GetHeight()) <- msg
 		}
 	}
@@ -207,19 +207,19 @@ func (ch *chainImpl) main() {
 					msg.Instance = uint64(instanceIndex)
 					broadcastFunc(msg)
 				}
-				rbc[i] = NewReliableBroadcast(i, ch.consenter.Total, ch.consenter.MaxMalicious, ch.consenter.Index, i, rbcInstanceRecvMsgChannels[i], componentSendFunc, componentBroadcastFunc) // TODO: a better way to eval whether i is leader, ListenAddress may difference with address in connectionlist
-				coin[i] = NewCommonCoin(i, ch.consenter.MaxMalicious, coinInstanceRecvMsgChannels[i], componentBroadcastFunc, ch.consenter.TBLSKeys)
-				aba[i] = NewBinaryAgreement(i, ch.consenter.Total, ch.consenter.MaxMalicious, abaInstanceRecvMsgChannels[i], componentBroadcastFunc, coin[i]) // May stop automatically?				                                                                                                                                                                    //TODO
+				rbc[i] = NewReliableBroadcast(i, ch.consenter.Total, ch.consenter.Tolerance, ch.consenter.Index, i, rbcInstanceRecvMsgChannels[i], componentSendFunc, componentBroadcastFunc) // TODO: a better way to eval whether i is leader, ListenAddress may difference with address in connectionlist
+				coin[i] = NewCommonCoin(i, ch.consenter.Tolerance, coinInstanceRecvMsgChannels[i], componentBroadcastFunc, ch.consenter.TBLSKeys)
+				aba[i] = NewBinaryAgreement(i, ch.consenter.Total, ch.consenter.Tolerance, abaInstanceRecvMsgChannels[i], componentBroadcastFunc, coin[i]) // May stop automatically?				                                                                                                                                                                    //TODO
 			}
 			///////////////////////////////////////
 			//setup ACS component (using N instances of COIN ABA RBC)
 			///////////////////////////////////////
-			acs := NewCommonSubset(ch.consenter.Index, ch.consenter.Total, ch.consenter.MaxMalicious, rbc, aba)
+			acs := NewCommonSubset(ch.consenter.Index, ch.consenter.Total, ch.consenter.Tolerance, rbc, aba)
 
 			////////////////////////////////////////////////
 			//setup HoneyBadgerBFT component (using ACS)
 			////////////////////////////////////////////////
-			block := NewHoneyBadgerBlock(ch.consenter.Total, ch.consenter.MaxMalicious, tkpeRecvMsgChannel, broadcastFunc, ch.consenter.TPKEKeys, acs)
+			block := NewHoneyBadgerBlock(ch.consenter.Total, ch.consenter.Tolerance, tkpeRecvMsgChannel, broadcastFunc, ch.consenter.TPKEKeys, acs)
 
 			///////////////////////////////////////
 			//propose transactions
@@ -274,7 +274,7 @@ func (ch *chainImpl) main() {
 			close(exitHeight)
 			// TODO: delete heightMap that <= working height. NOTE: synchronize problem
 
-			logger.Infof("Generate %v block(s) in %s", ch.support.Height()-workingHeight+1, time.Since(startTime).String())
+			logger.Infof("Generated %v block(s) in %s", ch.support.Height()-workingHeight+1, time.Since(startTime).String())
 
 		case tx := <-ch.sendChan:
 			nonCommittedBatch = append(nonCommittedBatch, tx)

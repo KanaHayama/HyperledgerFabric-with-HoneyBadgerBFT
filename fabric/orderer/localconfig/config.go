@@ -164,17 +164,23 @@ type Consumer struct {
 
 // HoneyBadgerBFT contains configuration for the HoneyBadgerBFT orderer.
 type HoneyBadgerBFT struct {
-	Total                               int
-	MaxMalicious                        int
-	ProposalSize                        int
-	Index                               int
-	ConnectionList                      []string
+	Total          int
+	Tolerance      int
+	ProposalSize   int
+	Index          int
+	ConnectionList []string
+
+	ThresholdEncryptionParamenter       []string
+	ThresholdEncryptionGenerator        []string
 	ThresholdEncryptionPublicKey        []string
 	ThresholdEncryptionVerificationKeys [][]string
 	ThresholdEncryptionPrivateKey       string
-	ThresholdSignaturePublicKey         []string
-	ThresholdSignatureVerificationKeys  [][]string
-	ThresholdSignaturePrivateKey        string
+
+	ThresholdSignatureParamenter       []string
+	ThresholdSignatureGenerator        []string
+	ThresholdSignaturePublicKey        []string
+	ThresholdSignatureVerificationKeys [][]string
+	ThresholdSignaturePrivateKey       string
 }
 
 var defaults = TopLevel{
@@ -232,17 +238,23 @@ var defaults = TopLevel{
 		},
 	},
 	HoneyBadgerBFT: HoneyBadgerBFT{
-		Total:                               0, //At least 1
-		MaxMalicious:                        0,
-		ProposalSize:                        0, //At least 1
-		Index:                               0,
-		ConnectionList:                      []string{},
+		Total:          0, //At least 1
+		Tolerance:      0,
+		ProposalSize:   0, //At least 1
+		Index:          0,
+		ConnectionList: []string{},
+
+		ThresholdEncryptionParamenter:       []string{},
+		ThresholdEncryptionGenerator:        []string{},
 		ThresholdEncryptionPublicKey:        []string{},
 		ThresholdEncryptionVerificationKeys: [][]string{},
 		ThresholdEncryptionPrivateKey:       "",
-		ThresholdSignaturePublicKey:         []string{},
-		ThresholdSignatureVerificationKeys:  [][]string{},
-		ThresholdSignaturePrivateKey:        "",
+
+		ThresholdSignatureParamenter:       []string{},
+		ThresholdSignatureGenerator:        []string{},
+		ThresholdSignaturePublicKey:        []string{},
+		ThresholdSignatureVerificationKeys: [][]string{},
+		ThresholdSignaturePrivateKey:       "",
 	},
 }
 
@@ -380,15 +392,22 @@ func (c *TopLevel) completeInitialization(configDir string) {
 		case c.HoneyBadgerBFT.Total == 0:
 			// logger.Infof("HoneyBadgerBFT.Total unset, setting to %v", defaults.HoneyBadgerBFT.Total)
 			logger.Panic("HoneyBadgerBFT.Total unset")
-		case c.HoneyBadgerBFT.MaxMalicious == 0:
-			// logger.Infof("HoneyBadgerBFT.MaxMalicious unset, setting to %v", defaults.HoneyBadgerBFT.MaxMalicious)
-			logger.Panic("HoneyBadgerBFT.MaxMalicious unset")
+		case c.HoneyBadgerBFT.Tolerance == 0:
+			// logger.Infof("HoneyBadgerBFT.Tolerance unset, setting to %v", defaults.HoneyBadgerBFT.Tolerance)
+			logger.Panic("HoneyBadgerBFT.Tolerance unset")
 		case c.HoneyBadgerBFT.ProposalSize == 0:
 			// logger.Infof("HoneyBadgerBFT.ProposalSize unset, setting to %v", defaults.HoneyBadgerBFT.ProposalSize)
 			logger.Panic("HoneyBadgerBFT.ProposalSize unset")
 		case c.HoneyBadgerBFT.ConnectionList == nil:
 			// logger.Infof("HoneyBadgerBFT.ConnectionList unset, setting to %v", defaults.HoneyBadgerBFT.ConnectionList)
 			logger.Panic("HoneyBadgerBFT.ConnectionList unset")
+
+		case c.HoneyBadgerBFT.ThresholdEncryptionParamenter == nil:
+			//logger.Infof("HoneyBadgerBFT.ThresholdEncryptionParamenter unset, setting to %v", defaults.HoneyBadgerBFT.ThresholdEncryptionParamenter)
+			logger.Panic("HoneyBadgerBFT.ThresholdEncryptionParamenter unset")
+		case c.HoneyBadgerBFT.ThresholdEncryptionGenerator == nil:
+			//logger.Infof("HoneyBadgerBFT.ThresholdEncryptionGenerator unset, setting to %v", defaults.HoneyBadgerBFT.ThresholdEncryptionGenerator)
+			logger.Panic("HoneyBadgerBFT.ThresholdEncryptionGenerator unset")
 		case c.HoneyBadgerBFT.ThresholdEncryptionPublicKey == nil:
 			//logger.Infof("HoneyBadgerBFT.ThresholdEncryptionPublicKey unset, setting to %v", defaults.HoneyBadgerBFT.ThresholdEncryptionPublicKey)
 			logger.Panic("HoneyBadgerBFT.ThresholdEncryptionPublicKey unset")
@@ -398,6 +417,13 @@ func (c *TopLevel) completeInitialization(configDir string) {
 		case c.HoneyBadgerBFT.ThresholdEncryptionPrivateKey == "":
 			//logger.Infof("HoneyBadgerBFT.ThresholdEncryptionPrivateKey unset, setting to %s", defaults.HoneyBadgerBFT.ThresholdEncryptionPrivateKey)
 			logger.Panic("HoneyBadgerBFT.ThresholdEncryptionPrivateKey unset")
+
+		case c.HoneyBadgerBFT.ThresholdSignatureParamenter == nil:
+			//logger.Infof("HoneyBadgerBFT.ThresholdSignatureParamenter unset, setting to %v", defaults.HoneyBadgerBFT.ThresholdSignatureParamenter)
+			logger.Panic("HoneyBadgerBFT.ThresholdSignatureParamenter unset")
+		case c.HoneyBadgerBFT.ThresholdSignatureGenerator == nil:
+			//logger.Infof("HoneyBadgerBFT.ThresholdSignatureGenerator unset, setting to %v", defaults.HoneyBadgerBFT.ThresholdSignatureGenerator)
+			logger.Panic("HoneyBadgerBFT.ThresholdSignatureGenerator unset")
 		case c.HoneyBadgerBFT.ThresholdSignaturePublicKey == nil:
 			//logger.Infof("HoneyBadgerBFT.ThresholdSignaturePublicKey unset, setting to %v", defaults.HoneyBadgerBFT.ThresholdSignatureKeyPublicKey)
 			logger.Panic("HoneyBadgerBFT.ThresholdSignaturePublicKey unset")

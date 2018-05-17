@@ -22,14 +22,14 @@ type HoneyBadgerBlock struct {
 	maxMalicious  int
 	channel       chan *ab.HoneyBadgerBFTMessage
 	broadcastFunc func(msg *ab.HoneyBadgerBFTMessageThresholdEncryption)
-	keys          TPKEKeys
+	keys          *TPKEKeys
 	acs           *CommonSubset
 
 	In  chan []*cb.Envelope
 	Out chan []*cb.Envelope
 }
 
-func NewHoneyBadgerBlock(total int, maxMalicious int, receiveMessageChannel chan *ab.HoneyBadgerBFTMessage, broadcastFunc func(msg ab.HoneyBadgerBFTMessage), keys TPKEKeys, acs *CommonSubset) (result *HoneyBadgerBlock) {
+func NewHoneyBadgerBlock(total int, maxMalicious int, receiveMessageChannel chan *ab.HoneyBadgerBFTMessage, broadcastFunc func(msg ab.HoneyBadgerBFTMessage), keys *TPKEKeys, acs *CommonSubset) (result *HoneyBadgerBlock) {
 	bc := func(msg *ab.HoneyBadgerBFTMessageThresholdEncryption) {
 		broadcastFunc(ab.HoneyBadgerBFTMessage{Type: &ab.HoneyBadgerBFTMessage_ThresholdEncryption{ThresholdEncryption: msg}})
 	}
@@ -62,7 +62,10 @@ func (block *HoneyBadgerBlock) honeyBadgerBlockService() {
 	if err != nil {
 		logger.Panicf("AES encrypt error: %s", err)
 	}
-	U, V, W := block.keys.Encrypt(key)
+	U, V, W, err := block.keys.Encrypt(key)
+	if err != nil {
+		logger.Panic(err)
+	}
 
 	toACS := encodeByteArrays([][]byte{encodeUVW(U, V, W), ciphered})
 	block.acs.In <- toACS
@@ -92,11 +95,15 @@ func (block *HoneyBadgerBlock) honeyBadgerBlockService() {
 			if err != nil {
 				logger.Panic(err)
 			}
-			U, V, W, err := decodeUVW(d[0])
+			U, V, W, err := decodeUVW(block.keys, d[0])
 			if err != nil {
 				logger.Panic(err)
 			}
-			shareMsgPayload = block.keys.DecryptShare(U, V, W).Bytes()
+			shareMsg, err := block.keys.DecryptShare(U, V, W)
+			if err != nil {
+				logger.Panic(err)
+			}
+			shareMsgPayload = shareMsg.Bytes()
 		}
 		shareMsgs = append(shareMsgs, &ab.HoneyBadgerBFTMessageThresholdEncryptionShare{Payload: shareMsgPayload})
 	}
@@ -110,7 +117,7 @@ func (block *HoneyBadgerBlock) honeyBadgerBlockService() {
 		for i, m := range msg.GetThresholdEncryption().GetShares() {
 			d := m.GetPayload()
 			if len(d) > 0 { //TODO: which is right?
-				shares[i] = TPKEPairing.NewG1().SetBytes(d)
+				shares[i] = block.keys.NewG1AndSetBytes(d)
 			} else {
 				shares[i] = nil
 			}
@@ -137,12 +144,15 @@ func (block *HoneyBadgerBlock) honeyBadgerBlockService() {
 		if err != nil {
 			logger.Panic(err)
 		}
-		U, V, W, err := decodeUVW(d[0])
+		U, V, W, err := decodeUVW(block.keys, d[0])
 		ciph := d[1]
 		if err != nil {
 			logger.Panic(err)
 		}
-		key := block.keys.CombineShares(svec, U, V, W)
+		key, err := block.keys.CombineShares(svec, U, V, W)
+		if err != nil {
+			logger.Panic(err)
+		}
 		raw, err := aesDecrypt(ciph, key)
 		if err != nil {
 			logger.Panic(err)
@@ -288,13 +298,13 @@ func encodeUVW(U *pbc.Element, V []byte, W *pbc.Element) []byte {
 	return encodeByteArrays(arrays)
 }
 
-func decodeUVW(data []byte) (U *pbc.Element, V []byte, W *pbc.Element, err error) {
+func decodeUVW(k *TPKEKeys, data []byte) (U *pbc.Element, V []byte, W *pbc.Element, err error) {
 	arrays, err := decodeByteArrays(data)
 	if len(arrays) != 3 {
 		return nil, nil, nil, fmt.Errorf("Error occured when decoding UVW: wrong # of elements")
 	}
-	U = TPKEPairing.NewG1().SetBytes(arrays[0])
+	U = k.NewG2AndSetBytes(arrays[0])
 	V = arrays[1]
-	W = TPKEPairing.NewG2().SetBytes(arrays[2])
+	W = k.NewG2AndSetBytes(arrays[2])
 	return U, V, W, nil
 }

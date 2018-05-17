@@ -13,23 +13,23 @@ import (
 
 type CommonCoin struct {
 	instanceIndex int
-	maxMalicious  int
+	tolerance     int
 	channel       chan *ab.HoneyBadgerBFTMessage
 	broadcastFunc func(msg *ab.HoneyBadgerBFTMessageCommonCoin)
-	keys          TBLSKeys
+	keys          *TBLSKeys
 
 	results map[uint64]chan bool
 	lock    sync.Mutex
 	exit    chan interface{}
 }
 
-func NewCommonCoin(instanceIndex int, maxMalicious int, receiveMessageChannel chan *ab.HoneyBadgerBFTMessage, broadcastFunc func(msg ab.HoneyBadgerBFTMessage), keys TBLSKeys) (result *CommonCoin) {
+func NewCommonCoin(instanceIndex int, tolerance int, receiveMessageChannel chan *ab.HoneyBadgerBFTMessage, broadcastFunc func(msg ab.HoneyBadgerBFTMessage), keys *TBLSKeys) (result *CommonCoin) {
 	bc := func(msg *ab.HoneyBadgerBFTMessageCommonCoin) {
 		broadcastFunc(ab.HoneyBadgerBFTMessage{Type: &ab.HoneyBadgerBFTMessage_CommonCoin{CommonCoin: msg}})
 	}
 	result = &CommonCoin{
 		instanceIndex: instanceIndex,
-		maxMalicious:  maxMalicious,
+		tolerance:     tolerance,
 		channel:       receiveMessageChannel,
 		broadcastFunc: bc,
 		keys:          keys,
@@ -67,7 +67,7 @@ func (coin *CommonCoin) commonCoinService() {
 				continue
 			}
 			payload := msg.GetCommonCoin().GetPayload()
-			signature := TBLSPairing.NewG1().SetBytes(payload)
+			signature := coin.keys.NewG1AndSetBytes(payload)
 			bytesBuffer := bytes.NewBuffer([]byte{})
 			binary.Write(bytesBuffer, binary.BigEndian, round)
 			hash := coin.keys.HashMessage(bytesBuffer.Bytes())
@@ -79,7 +79,7 @@ func (coin *CommonCoin) commonCoinService() {
 				received[round] = make(map[int]*pbc.Element)
 			}
 			received[round][sender] = signature
-			if len(received[round]) == coin.maxMalicious+1 {
+			if len(received[round]) == coin.tolerance+1 {
 				combined := coin.keys.CombineShares(received[round])
 				if !coin.keys.VerifySignature(combined, hash) {
 					logger.Panicf("Faild to verify signature") //TODO: Or Debugf?

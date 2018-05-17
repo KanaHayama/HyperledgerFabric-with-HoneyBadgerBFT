@@ -12,7 +12,7 @@ import (
 type ReliableBroadcast struct {
 	instanceIndex int // == leaderIndex
 	total         int
-	maxMalicious  int
+	tolerance     int
 	ordererIndex  int
 	leaderIndex   int
 	channel       chan *ab.HoneyBadgerBFTMessage
@@ -23,7 +23,7 @@ type ReliableBroadcast struct {
 	Out chan []byte
 }
 
-func NewReliableBroadcast(instanceIndex int, total int, maxMalicious int, ordererIndex int, leaderIndex int, receiveMessageChannel chan *ab.HoneyBadgerBFTMessage, sendFunc func(index int, msg ab.HoneyBadgerBFTMessage), broadcastFunc func(msg ab.HoneyBadgerBFTMessage)) (result *ReliableBroadcast) {
+func NewReliableBroadcast(instanceIndex int, total int, tolerance int, ordererIndex int, leaderIndex int, receiveMessageChannel chan *ab.HoneyBadgerBFTMessage, sendFunc func(index int, msg ab.HoneyBadgerBFTMessage), broadcastFunc func(msg ab.HoneyBadgerBFTMessage)) (result *ReliableBroadcast) {
 	// TODO: check param relations
 	s := func(index int, msg *ab.HoneyBadgerBFTMessageReliableBroadcast) {
 		sendFunc(index, ab.HoneyBadgerBFTMessage{Type: &ab.HoneyBadgerBFTMessage_ReliableBroadcast{ReliableBroadcast: msg}})
@@ -34,7 +34,7 @@ func NewReliableBroadcast(instanceIndex int, total int, maxMalicious int, ordere
 	result = &ReliableBroadcast{
 		instanceIndex: instanceIndex,
 		total:         total,
-		maxMalicious:  maxMalicious,
+		tolerance:     tolerance,
 		ordererIndex:  ordererIndex,
 		leaderIndex:   leaderIndex,
 		channel:       receiveMessageChannel,
@@ -60,10 +60,10 @@ func (rbc *ReliableBroadcast) reliableBroadcastService() {
 	// # for fewer nodes to respond
 	// #   EchoThreshold = ceil((N + f + 1.)/2)
 	// #   K = EchoThreshold - f
-	var K = rbc.total - 2*rbc.maxMalicious
-	var EchoThreshold = rbc.total - rbc.maxMalicious
-	var ReadyThreshold = rbc.maxMalicious + 1
-	var OutputThreshold = 2*rbc.maxMalicious + 1
+	var K = rbc.total - 2*rbc.tolerance
+	var EchoThreshold = rbc.total - rbc.tolerance
+	var ReadyThreshold = rbc.tolerance + 1
+	var OutputThreshold = 2*rbc.tolerance + 1
 	z := zfecParam{K: K, M: rbc.total}
 
 	if rbc.leaderIndex == rbc.ordererIndex {

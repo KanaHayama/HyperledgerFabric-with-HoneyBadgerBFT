@@ -17,6 +17,7 @@ var connectedOrderers = make(map[string]*net.TCPConn)
 var registedChains = make(map[string]MessageChannels)
 var listener *net.TCPListener
 var sendChannels = make(map[string]chan ab.HoneyBadgerBFTMessage)
+var accepted = make(chan interface{})
 
 type MessageChannels struct {
 	Send    chan ab.HoneyBadgerBFTMessage
@@ -32,24 +33,30 @@ func Register(chainID string, connectAddresses []string, selfIndex int) (Message
 		Receive: make(chan *ab.HoneyBadgerBFTMessage),
 	}
 	registedChains[chainID] = channels
-	//listen
-	if err := listen(connectAddresses[selfIndex]); err != nil {
-		return MessageChannels{}, err
+	selfAddress := strings.TrimSpace(connectAddresses[selfIndex])
+	if listener == nil {
+		//listen
+		if err := listen(selfAddress); err != nil {
+			return MessageChannels{}, err
+		}
+		//listen service
+		go acceptConnectionService()
+	} else {
+		if listener.Addr().String() != selfAddress {
+			return MessageChannels{}, fmt.Errorf("Already listen %s, can not listen %s", listener.Addr().String(), selfAddress)
+		} else {
+			logger.Debugf("Reuse listener binding %s", selfAddress)
+		}
 	}
-	//listen service
-	var accepted = make(chan interface{})
-	go acceptConnectionService(accepted)
+
 	//dispathc
 	for _, addr := range connectAddresses {
 		sendChannels[addr] = make(chan ab.HoneyBadgerBFTMessage)
 	}
-	go dispatchByReceiverService(channels.Send, connectAddresses)
 	//dial
 	dial(connectAddresses)
 	//send service
-	for _, addr := range connectAddresses {
-		go sendMessageService(chainID, selfIndex, addr)
-	}
+	go sendMessageService(channels.Send, connectAddresses, chainID, selfIndex)
 	//
 	for range connectAddresses {
 		<-accepted
@@ -93,19 +100,11 @@ func dial(addresses []string) {
 	}
 }
 
-func dispatchByReceiverService(sendChan chan ab.HoneyBadgerBFTMessage, connectAddresses []string) {
-	for {
-		msg := <-sendChan
-		receiver := int(msg.GetReceiver())
-		sendChannels[connectAddresses[receiver]] <- msg // TODO: deal nil channel
-	}
-}
-
-func sendMessageService(chainID string, selfIndex int, address string) {
-	channel := sendChannels[address]
+func sendMessageService(channel chan ab.HoneyBadgerBFTMessage, address []string, chainID string, selfIndex int) {
 	for {
 		msg := <-channel
-		conn := connectedOrderers[address]
+		receiver := msg.GetReceiver()
+		conn := connectedOrderers[address[receiver]]
 		msg.Sender = uint64(selfIndex)
 		msg.ChainId = chainID
 
@@ -121,7 +120,7 @@ func sendMessageService(chainID string, selfIndex int, address string) {
 		data := utils.MarshalOrPanic(&msg)
 		buf := bytes.NewBuffer(convertInt32ToBytes(int32(len(data))))
 		buf.Write(data)
-		_, err := conn.Write(buf.Bytes())
+		_, err := conn.Write(buf.Bytes()) //TODO: lock ?
 		if err != nil {
 			logger.Panicf("Send message to %s failed: %s", address, err)
 		}
@@ -135,10 +134,6 @@ func convertInt32ToBytes(value int32) []byte {
 }
 
 func listen(address string) error {
-	address = strings.TrimSpace(address)
-	if listener != nil && listener.Addr().String() != address {
-		return fmt.Errorf("Already listen %s, can not listen %s", listener.Addr().String(), address)
-	}
 	tcpaddr, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
 		return err
@@ -152,7 +147,7 @@ func listen(address string) error {
 	return nil
 }
 
-func acceptConnectionService(accepted chan interface{}) {
+func acceptConnectionService() {
 	logger.Debugf("Start accept connection at %s", listener.Addr())
 	for {
 		conn, err := listener.Accept()

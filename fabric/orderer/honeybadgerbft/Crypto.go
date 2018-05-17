@@ -7,102 +7,121 @@ import (
 	"github.com/Nik-U/pbc"
 )
 
-const (
-	//TODO: Find a better way to load params dynamiclly
-	TPKEParamString = `type a
-q 8780710799663312522437781984754049815806883199414208211028653399266475630880222957078625179422662221423155858769582317459277713367317481324925129998224791
-h 12016012264891146079388821366740534204802954401251311822919615131047207289359704531102844802183906537786776
-r 730750818665451621361119245571504901405976559617
-exp2 159
-exp1 107
-sign1 1
-sign0 1`
-)
+// TODO: make sure NewG1 or NewG2
 
-var (
-	TPKEPairing   *pbc.Pairing
-	TPKEGenerator *pbc.Element
-)
-
-func init() {
-	param, _ := pbc.NewParamsFromString(TPKEParamString)
-	TPKEPairing = param.NewPairing()
-	TPKEGenerator, _ = TPKEPairing.NewG1().SetString("[4264083391895955901265257040028479149400169025615345260303986214726423231173928285256791041998919055277112394516001733341992693480052725918957267301183325,2116426609166886503385333553365957364401816544109920990955286798122869276384003469957105697651246200288946800075692216092350705727159751274607530017817646]", 10) //g1 == g2 //TODO: use my own generator one day
-}
+const DecodeBase = 10
 
 type TPKEKeys struct {
+	pairing   *pbc.Pairing
+	generator *pbc.Element
+
 	publicKey        *pbc.Element
 	verificationKeys []*pbc.Element
 	privateKey       *pbc.Element
 }
 
-func NewTPKEKeys(publicKey *pbc.Element, verificationKeys []*pbc.Element, privateKey *pbc.Element) (TPKEKeys, error) {
-	if publicKey == nil {
-		return TPKEKeys{}, fmt.Errorf("PublicKey is nil")
+func NewTPKEKeys(paramenter string, generator string, publicKey string, verificationKeys []string, privateKey string) (*TPKEKeys, error) {
+	param, err := pbc.NewParamsFromString(paramenter)
+	if err != nil {
+		return nil, err
 	}
-	if privateKey == nil {
-		return TPKEKeys{}, fmt.Errorf("Privatekey is nil")
+	pairing := param.NewPairing()
+	gen, ok := pairing.NewG1().SetString(generator, DecodeBase)
+	if !ok {
+		return nil, fmt.Errorf("Decode generator failed: %s", generator)
 	}
-	return TPKEKeys{
-		publicKey:        publicKey,
-		verificationKeys: verificationKeys,
-		privateKey:       privateKey,
+	pub, ok := pairing.NewG1().SetString(publicKey, DecodeBase) //TODO: Or G2?
+	if !ok {
+		return nil, fmt.Errorf("Decode public key failed: %s", publicKey)
+	}
+	if len(verificationKeys) == 0 {
+		return nil, fmt.Errorf("[]VerificationKeys is nil")
+	}
+	var veri = make([]*pbc.Element, len(verificationKeys))
+	for i, s := range verificationKeys {
+		veri[i], ok = pairing.NewG1().SetString(s, DecodeBase)
+		if !ok {
+			return nil, fmt.Errorf("Decode verification key %v failed: %s", i, s)
+		}
+	}
+	pri, ok := pairing.NewZr().SetString(privateKey, DecodeBase)
+	if !ok {
+		return nil, fmt.Errorf("Decode private key failed: %s", privateKey)
+	}
+	return &TPKEKeys{
+		pairing:   pairing,
+		generator: gen,
+
+		publicKey:        pub,
+		verificationKeys: veri,
+		privateKey:       pri,
 	}, nil
 }
 
-func (k TPKEKeys) xor(x []byte, y []byte) []byte {
+func (k *TPKEKeys) xor(x []byte, y []byte) ([]byte, error) {
 	if len(x) != 32 || len(y) != 32 {
-		logger.Panicf("Incorrect []byte length")
+		return nil, fmt.Errorf("Incorrect []byte length")
 	}
 	result := make([]byte, 32)
 	for i := range result {
 		result[i] = x[i] ^ y[i]
 	}
-	return result
+	return result, nil
 }
 
-func (k TPKEKeys) hashG(e *pbc.Element) []byte {
+func (k *TPKEKeys) hashG(e *pbc.Element) []byte {
 	s := sha256.New()
 	s.Write(e.Bytes())
 	return s.Sum(nil)
 }
 
-func (k TPKEKeys) hashH(g *pbc.Element, x []byte) *pbc.Element {
+func (k *TPKEKeys) hashH(g *pbc.Element, x []byte) *pbc.Element {
 	s := sha256.New()
 	s.Write(g.Bytes())
 	s.Write(x)
-	return TPKEPairing.NewG2().SetFromHash(s.Sum(nil))
+	return k.pairing.NewG2().SetFromHash(s.Sum(nil))
 }
 
-func (k TPKEKeys) Encrypt(data []byte) (*pbc.Element, []byte, *pbc.Element) {
+func (k *TPKEKeys) NewG1AndSetBytes(b []byte) *pbc.Element {
+	return k.pairing.NewG1().SetBytes(b)
+}
+
+func (k *TPKEKeys) NewG2AndSetBytes(b []byte) *pbc.Element {
+	return k.pairing.NewG2().SetBytes(b)
+}
+
+func (k *TPKEKeys) Encrypt(data []byte) (*pbc.Element, []byte, *pbc.Element, error) {
 	if len(data) != 32 {
-		logger.Panicf("Incorrect []byte length")
+		return nil, nil, nil, fmt.Errorf("Incorrect []byte length")
 	}
-	r := TPKEPairing.NewZr().Rand()
-	U := TPKEPairing.NewG1().PowZn(TPKEGenerator, r)
-	V := k.xor(data, k.hashG(TPKEPairing.NewG1().PowZn(k.publicKey, r)))
+	r := k.pairing.NewZr().Rand()
+	U := k.pairing.NewG1().PowZn(k.generator, r)
+	V, err := k.xor(data, k.hashG(k.pairing.NewG1().PowZn(k.publicKey, r)))
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	mid := k.hashH(U, V)
-	W := TPKEPairing.NewG2().PowZn(mid, r)
-	return U, V, W
+	W := k.pairing.NewG2().PowZn(mid, r)
+	return U, V, W, nil
 }
 
-func (k TPKEKeys) VerifyCiphertext(U *pbc.Element, V []byte, W *pbc.Element) bool {
+func (k *TPKEKeys) VerifyCiphertext(U *pbc.Element, V []byte, W *pbc.Element) bool {
 	H := k.hashH(U, V)
-	p1 := TPKEPairing.NewGT().Pair(TPKEGenerator, W)
-	p2 := TPKEPairing.NewGT().Pair(U, H)
+	p1 := k.pairing.NewGT().Pair(k.generator, W)
+	p2 := k.pairing.NewGT().Pair(U, H)
 	return p1.Equals(p2)
 }
 
-func (k TPKEKeys) DecryptShare(U *pbc.Element, V []byte, W *pbc.Element) *pbc.Element {
+func (k *TPKEKeys) DecryptShare(U *pbc.Element, V []byte, W *pbc.Element) (*pbc.Element, error) {
 	if !k.VerifyCiphertext(U, V, W) {
-		logger.Panicf("Verify ciphertext failed")
+		return nil, fmt.Errorf("Verify ciphertext failed")
 	}
-	return TPKEPairing.NewG1().PowZn(U, k.privateKey)
+	return k.pairing.NewG1().PowZn(U, k.privateKey), nil
 }
 
-func (k TPKEKeys) lagrange(set []int, i int) *pbc.Element {
+func (k *TPKEKeys) lagrange(set []int, i int) *pbc.Element {
 	reduce := func(list []int) *pbc.Element {
-		r := TPKEPairing.NewZr().Set1()
+		r := k.pairing.NewZr().Set1()
 		for _, v := range list {
 			r.ThenMulInt32(int32(v))
 		}
@@ -119,9 +138,9 @@ func (k TPKEKeys) lagrange(set []int, i int) *pbc.Element {
 	return reduce(num).ThenDiv(reduce(den))
 }
 
-func (k TPKEKeys) CombineShares(shares map[int]*pbc.Element, U *pbc.Element, V []byte, W *pbc.Element) []byte {
+func (k *TPKEKeys) CombineShares(shares map[int]*pbc.Element, U *pbc.Element, V []byte, W *pbc.Element) ([]byte, error) {
 	reduce := func(list []*pbc.Element) *pbc.Element {
-		r := TPKEPairing.NewG1().Set1()
+		r := k.pairing.NewG1().Set1()
 		for _, v := range list {
 			r.ThenMul(v)
 		}
@@ -133,71 +152,85 @@ func (k TPKEKeys) CombineShares(shares map[int]*pbc.Element, U *pbc.Element, V [
 	}
 	var l []*pbc.Element
 	for i, share := range shares {
-		l = append(l, TPKEPairing.NewG1().PowZn(share, k.lagrange(set, i)))
+		l = append(l, k.pairing.NewG1().PowZn(share, k.lagrange(set, i)))
 	}
 	return k.xor(k.hashG(reduce(l)), V)
 }
 
 ////////////////////////////////////////////////////////////////////
 
-const (
-	//Use same params with TPKE for convenience
-	TBLSParamString = TPKEParamString
-)
-
-var (
-	TBLSPairing   *pbc.Pairing
-	TBLSGenerator *pbc.Element
-)
-
-func init() {
-	param, _ := pbc.NewParamsFromString(TBLSParamString)
-	TBLSPairing = param.NewPairing()
-	TBLSGenerator, _ = TBLSPairing.NewG1().SetString("[4264083391895955901265257040028479149400169025615345260303986214726423231173928285256791041998919055277112394516001733341992693480052725918957267301183325,2116426609166886503385333553365957364401816544109920990955286798122869276384003469957105697651246200288946800075692216092350705727159751274607530017817646]", 10) //TODO: use my own generator one day
-}
-
 type TBLSKeys struct {
-	//Same as TPKEPublicKey for convenience
+	pairing   *pbc.Pairing
+	generator *pbc.Element
+
 	publicKey        *pbc.Element
 	verificationKeys []*pbc.Element
 	privateKey       *pbc.Element
 }
 
-func NewTBLSKeys(publicKey *pbc.Element, verificationKeys []*pbc.Element, privateKey *pbc.Element) (TBLSKeys, error) {
-	if publicKey == nil {
-		return TBLSKeys{}, fmt.Errorf("PublicKey is nil")
+func NewTBLSKeys(paramenter string, generator string, publicKey string, verificationKeys []string, privateKey string) (*TBLSKeys, error) {
+	param, err := pbc.NewParamsFromString(paramenter)
+	if err != nil {
+		return nil, err
 	}
-	if privateKey == nil {
-		return TBLSKeys{}, fmt.Errorf("Privatekey is nil")
+	pairing := param.NewPairing()
+	gen, ok := pairing.NewG1().SetString(generator, DecodeBase)
+	if !ok {
+		return nil, fmt.Errorf("Decode generator failed: %s", generator)
 	}
-	return TBLSKeys{
-		publicKey:        publicKey,
-		verificationKeys: verificationKeys,
-		privateKey:       privateKey,
+	pub, ok := pairing.NewG1().SetString(publicKey, DecodeBase) //TODO: Or G2?
+	if !ok {
+		return nil, fmt.Errorf("Decode public key failed: %s", publicKey)
+	}
+	if len(verificationKeys) == 0 {
+		return nil, fmt.Errorf("[]VerificationKeys is nil")
+	}
+	var veri = make([]*pbc.Element, len(verificationKeys))
+	for i, s := range verificationKeys {
+		veri[i], ok = pairing.NewG1().SetString(s, DecodeBase)
+		if !ok {
+			return nil, fmt.Errorf("Decode verification key %v failed: %s", i, s)
+		}
+	}
+	pri, ok := pairing.NewZr().SetString(privateKey, DecodeBase)
+	if !ok {
+		return nil, fmt.Errorf("Decode private key failed: %s", privateKey)
+	}
+	return &TBLSKeys{
+		pairing:   pairing,
+		generator: gen,
+
+		publicKey:        pub,
+		verificationKeys: veri,
+		privateKey:       pri,
 	}, nil
 }
 
-func (k TBLSKeys) HashMessage(message []byte) *pbc.Element {
+func (k *TBLSKeys) NewG1AndSetBytes(b []byte) *pbc.Element {
+	return k.pairing.NewG1().SetBytes(b)
+}
+
+func (k *TBLSKeys) HashMessage(message []byte) *pbc.Element {
 	s := sha256.New()
 	s.Write(message)
 	h := s.Sum(nil)
-	return TBLSPairing.NewG1().SetFromHash(h)
+	return k.pairing.NewG1().SetFromHash(h)
 }
 
-func (k TBLSKeys) Sign(hash *pbc.Element) *pbc.Element {
-	return TBLSPairing.NewG1().PowZn(hash, k.privateKey)
+func (k *TBLSKeys) Sign(hash *pbc.Element) *pbc.Element {
+	return k.pairing.NewG1().PowZn(hash, k.privateKey)
 }
 
-func (k TBLSKeys) VerifyShare(signature *pbc.Element, hash *pbc.Element, index int) bool {
-	p1 := TBLSPairing.NewGT().Pair(signature, TBLSGenerator)
-	p2 := TBLSPairing.NewGT().Pair(hash, k.verificationKeys[index])
+func (k *TBLSKeys) VerifyShare(signature *pbc.Element, hash *pbc.Element, index int) bool {
+	p1 := k.pairing.NewGT().Pair(signature, k.generator)
+	p2 := k.pairing.NewGT().Pair(hash, k.verificationKeys[index])
 	r := p1.Equals(p2)
 	return r
 }
 
-func (k TBLSKeys) lagrange(set []int, i int) *pbc.Element {
+func (k *TBLSKeys) lagrange(set []int, i int) *pbc.Element {
 	reduce := func(list []int) *pbc.Element {
-		r := TBLSPairing.NewZr().Set1()
+		r := k.pairing.NewZr().Set1()
 		for _, v := range list {
 			r.ThenMulInt32(int32(v))
 		}
@@ -214,9 +247,9 @@ func (k TBLSKeys) lagrange(set []int, i int) *pbc.Element {
 	return reduce(num).ThenDiv(reduce(den))
 }
 
-func (k TBLSKeys) CombineShares(signatures map[int]*pbc.Element) *pbc.Element {
+func (k *TBLSKeys) CombineShares(signatures map[int]*pbc.Element) *pbc.Element {
 	reduce := func(list []*pbc.Element) *pbc.Element {
-		r := TBLSPairing.NewG1().Set1()
+		r := k.pairing.NewG1().Set1()
 		for _, v := range list {
 			r.ThenMul(v)
 		}
@@ -228,19 +261,13 @@ func (k TBLSKeys) CombineShares(signatures map[int]*pbc.Element) *pbc.Element {
 	}
 	var l []*pbc.Element
 	for i, sig := range signatures {
-		l = append(l, TBLSPairing.NewG1().PowZn(sig, k.lagrange(set, i)))
+		l = append(l, k.pairing.NewG1().PowZn(sig, k.lagrange(set, i)))
 	}
 	return reduce(l)
 }
 
-func (k TBLSKeys) VerifySignature(signature *pbc.Element, hash *pbc.Element) bool {
-	p1 := TBLSPairing.NewGT().Pair(signature, TBLSGenerator)
-	p2 := TBLSPairing.NewGT().Pair(hash, k.publicKey)
+func (k *TBLSKeys) VerifySignature(signature *pbc.Element, hash *pbc.Element) bool {
+	p1 := k.pairing.NewGT().Pair(signature, k.generator)
+	p2 := k.pairing.NewGT().Pair(hash, k.publicKey)
 	return p1.Equals(p2)
-}
-
-////////////////////////////////////////////////////////////////////
-
-func main() {
-	fmt.Println("Distributed key generator NOT ready")
 }

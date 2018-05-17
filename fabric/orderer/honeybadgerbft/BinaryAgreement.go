@@ -9,7 +9,7 @@ import (
 type BinaryAgreement struct {
 	instanceIndex int
 	total         int
-	maxMalicious  int
+	tolerance     int
 	channel       chan *ab.HoneyBadgerBFTMessage
 	broadcastFunc func(msg *ab.HoneyBadgerBFTMessageBinaryAgreement)
 	coin          *CommonCoin
@@ -35,14 +35,14 @@ type BinaryAgreement struct {
 	Out chan bool
 }
 
-func NewBinaryAgreement(instanceIndex int, total int, maxMalicious int, receiveMessageChannel chan *ab.HoneyBadgerBFTMessage, broadcastFunc func(msg ab.HoneyBadgerBFTMessage), coin *CommonCoin) (result *BinaryAgreement) {
+func NewBinaryAgreement(instanceIndex int, total int, tolerance int, receiveMessageChannel chan *ab.HoneyBadgerBFTMessage, broadcastFunc func(msg ab.HoneyBadgerBFTMessage), coin *CommonCoin) (result *BinaryAgreement) {
 	bc := func(msg *ab.HoneyBadgerBFTMessageBinaryAgreement) {
 		broadcastFunc(ab.HoneyBadgerBFTMessage{Type: &ab.HoneyBadgerBFTMessage_BinaryAgreement{BinaryAgreement: msg}})
 	}
 	result = &BinaryAgreement{
 		instanceIndex: instanceIndex,
 		total:         total,
-		maxMalicious:  maxMalicious,
+		tolerance:     tolerance,
 		channel:       receiveMessageChannel,
 		broadcastFunc: bc,
 		coin:          coin,
@@ -89,11 +89,11 @@ func (aba *BinaryAgreement) binaryAgreementService() {
 		})
 		var values = []bool{}
 		for {
-			if aba.inBinValuesSet(round, true) && aba.lenAuxValuesSet(round, true) >= aba.total-aba.maxMalicious {
+			if aba.inBinValuesSet(round, true) && aba.lenAuxValuesSet(round, true) >= aba.total-aba.tolerance {
 				values = []bool{true}
 				break
 			}
-			if aba.inBinValuesSet(round, false) && aba.lenAuxValuesSet(round, false) >= aba.total-aba.maxMalicious {
+			if aba.inBinValuesSet(round, false) && aba.lenAuxValuesSet(round, false) >= aba.total-aba.tolerance {
 				values = []bool{false}
 				break
 			}
@@ -101,7 +101,7 @@ func (aba *BinaryAgreement) binaryAgreementService() {
 			for _, v := range aba.listBinValuesSet(round) {
 				sum += aba.lenAuxValuesSet(round, v)
 			}
-			if sum >= aba.total-aba.maxMalicious {
+			if sum >= aba.total-aba.tolerance {
 				values = []bool{true, false}
 				break
 			}
@@ -153,7 +153,7 @@ func (aba *BinaryAgreement) binaryAgreementReceiveService() {
 					continue
 				}
 				aba.putEstRecvSet(round, value, sender)
-				if aba.lenEstRecvSet(round, value) >= aba.maxMalicious+1 && !aba.inEstSentSet(round, value) {
+				if aba.lenEstRecvSet(round, value) >= aba.tolerance+1 && !aba.inEstSentSet(round, value) {
 					aba.broadcastFunc(&ab.HoneyBadgerBFTMessageBinaryAgreement{
 						Round: round,
 						Value: value,
@@ -161,7 +161,7 @@ func (aba *BinaryAgreement) binaryAgreementReceiveService() {
 					})
 					aba.putEstSentSet(round, value)
 				}
-				if aba.lenEstRecvSet(round, value) >= 2*aba.maxMalicious+1 {
+				if aba.lenEstRecvSet(round, value) >= 2*aba.tolerance+1 {
 					aba.putBinValuesSet(round, value)
 					aba.cond.Signal()
 				}

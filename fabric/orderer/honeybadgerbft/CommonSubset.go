@@ -3,7 +3,7 @@ package honeybadgerbft
 type CommonSubset struct {
 	ordererIndex int
 	total        int
-	maxMalicious int
+	tolerance    int
 	rbc          []*ReliableBroadcast
 	aba          []*BinaryAgreement
 
@@ -11,11 +11,11 @@ type CommonSubset struct {
 	Out chan [][]byte
 }
 
-func NewCommonSubset(ordererIndex int, total int, maxMalicious int, rbc []*ReliableBroadcast, aba []*BinaryAgreement) (result *CommonSubset) {
+func NewCommonSubset(ordererIndex int, total int, tolerance int, rbc []*ReliableBroadcast, aba []*BinaryAgreement) (result *CommonSubset) {
 	result = &CommonSubset{
 		ordererIndex: ordererIndex,
 		total:        total,
-		maxMalicious: maxMalicious,
+		tolerance:    tolerance,
 		rbc:          rbc,
 		aba:          aba,
 
@@ -69,7 +69,7 @@ func (acs *CommonSubset) commonSubsetService() {
 				sum++
 			}
 		}
-		if sum >= acs.total-acs.maxMalicious {
+		if sum >= acs.total-acs.tolerance {
 			for index, aba := range acs.aba {
 				if !abaInputted[index] {
 					aba.In <- false

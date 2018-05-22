@@ -78,14 +78,14 @@ func dial(addresses []string) {
 		}
 		var tried int
 		var tcpconn *net.TCPConn
-		for { //TODO: better retry
+		for { //TODO: 换一个更好的重试逻辑
 			tcpconn, err = net.DialTCP("tcp", nil, tcpaddr)
 			if err == nil {
 				break
 			}
 			tried++
 			logger.Debugf("Can not connect %s: %s", address, err)
-			time.Sleep(3 * time.Second) //TODO: hardcoded
+			time.Sleep(1 * time.Second) //TODO: 避免硬编码等待时间
 		}
 		logger.Debugf("Connected to %s", address)
 		connectedOrderers[address] = tcpconn
@@ -120,7 +120,7 @@ func sendMessageService(channel chan ab.HoneyBadgerBFTMessage, address []string,
 		data := utils.MarshalOrPanic(&msg)
 		buf := bytes.NewBuffer(convertInt32ToBytes(int32(len(data))))
 		buf.Write(data)
-		_, err := conn.Write(buf.Bytes()) //TODO: lock ?
+		_, err := conn.Write(buf.Bytes()) //TODO: 加锁sync.Mutex
 		if err != nil {
 			logger.Panicf("Send message to %s failed: %s", address, err)
 		}
@@ -176,15 +176,20 @@ func readConnectionService(connection net.Conn) {
 		if err != nil {
 			logger.Panicf("Error occured when converting message length from bytes %s: %s", connection.RemoteAddr(), err)
 		}
-		buf = make([]byte, msgLength)
-		length, err = connection.Read(buf)
-		if err != nil {
-			logger.Panicf("Error occured when reading from %s: %s", connection.RemoteAddr(), err)
+		msg := bytes.NewBuffer([]byte{})
+		for msgLength > 0 {
+			msgBuf := make([]byte, msgLength)
+			length, err = connection.Read(msgBuf)
+			if err != nil {
+				logger.Panicf("Error occured when reading from %s: %s", connection.RemoteAddr(), err)
+			}
+			if length != int(msgLength) {
+				logger.Warningf("Can not read full message from %s: require %v - received %v", connection.RemoteAddr(), msgLength, length)
+			}
+			msg.Write(msgBuf[:length])
+			msgLength -= int32(length)
 		}
-		if length != int(msgLength) {
-			logger.Panicf("Can not read full message %s", connection.RemoteAddr())
-		}
-		processReceivedData(buf)
+		processReceivedData(msg.Bytes())
 	}
 }
 

@@ -148,7 +148,7 @@ func (rbc *ReliableBroadcast) reliableBroadcastService() {
 					continue
 				}
 			} else {
-				blocks[rootHashString] = make([][]byte, 8)
+				blocks[rootHashString] = make([][]byte, rbc.total)
 			}
 
 			if !verifyMerkleTree(rootHash, branch, block, sender) {
